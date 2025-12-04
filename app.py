@@ -61,13 +61,13 @@ def process_excel_file(uploaded_file):
         # Read the receiptsWithItems sheet
         df = pd.read_excel(uploaded_file, sheet_name='receiptsWithItems')
         
-        # Apply carry-forward for important columns
+        # Apply carry-forward for important columns using ffill()
         fill_columns = ['ReceiptId', 'Date', 'Cashier', 'CustomerName', 
                        'CustomerNumber', 'PaymentMode']
         
         for col in fill_columns:
             if col in df.columns:
-                df[col].fillna(method='ffill', inplace=True)
+                df[col] = df[col].ffill()  # Use ffill() instead of fillna(method='ffill')
         
         # Remove completely blank rows
         df = df.dropna(how='all')
@@ -135,7 +135,13 @@ def filter_customer_transactions(df, customer_number, start_date, end_date, paym
     
     # Filter by payment mode if specified (skip if "All")
     if payment_mode and payment_mode != "All" and 'PaymentMode' in customer_data.columns:
+        rows_before = len(customer_data)
         customer_data = customer_data[customer_data['PaymentMode'] == payment_mode]
+        rows_after = len(customer_data)
+        # Debug: This helps identify if filtering is working
+        if rows_before > 0 and rows_after == rows_before:
+            # Payment mode filtering didn't remove any rows - might be an issue
+            pass
     
     # Filter by entry type (only Items and Discounts)
     customer_data = customer_data[customer_data['EntryType'].isin(['Item', 'Discount'])]
@@ -337,6 +343,15 @@ def main():
         if df is not None and not df.empty:
             st.success(f"✅ File loaded: {len(df)} rows processed")
             
+            # Debug section (expandable)
+            with st.expander("🔍 Debug: Check Payment Modes in Your Data"):
+                st.write("**Unique Payment Modes:**")
+                st.write(df['PaymentMode'].value_counts())
+                
+                st.write("\n**Sample of how PaymentMode is stored:**")
+                sample_df = df[df['EntryType'] == 'Item'].head(20)
+                st.dataframe(sample_df[['CustomerName', 'EntryName', 'PaymentMode']])
+            
             # Date range
             st.header("📅 Select Date Range")
             col1, col2 = st.columns(2)
@@ -370,8 +385,23 @@ def main():
                 
                 # Select all/none buttons
                 col1, col2 = st.columns(2)
-                select_all = col1.button("✅ Select All")
-                deselect_all = col2.button("❌ Deselect All")
+                
+                # Initialize session state for select all
+                if 'select_all_state' not in st.session_state:
+                    st.session_state.select_all_state = False
+                
+                # Button handlers
+                if col1.button("✅ Select All"):
+                    st.session_state.select_all_state = True
+                    for idx in range(len(customers)):
+                        st.session_state[f"customer_{idx}"] = True
+                    st.rerun()
+                
+                if col2.button("❌ Deselect All"):
+                    st.session_state.select_all_state = False
+                    for idx in range(len(customers)):
+                        st.session_state[f"customer_{idx}"] = False
+                    st.rerun()
                 
                 # Customer selection
                 selected_customers = []
@@ -380,15 +410,9 @@ def main():
                     with st.container():
                         col1, col2 = st.columns([4, 1])
                         
-                        # Default to selected if "Select All" clicked
-                        default_checked = select_all or st.session_state.get(f"check_{idx}", False)
-                        if deselect_all:
-                            default_checked = False
-                        
                         # Customer checkbox
                         is_selected = col1.checkbox(
                             f"{customer['name']} ({customer['number']})",
-                            value=default_checked,
                             key=f"customer_{idx}"
                         )
                         
@@ -410,6 +434,40 @@ def main():
                 # Generate button
                 if selected_customers:
                     st.success(f"✅ {len(selected_customers)} customers selected")
+                    
+                    # Preview transactions (optional)
+                    with st.expander("🔍 Preview transactions before generating PDFs"):
+                        preview_customer = st.selectbox(
+                            "Select customer to preview:",
+                            [f"{c['name']} ({c['number']})" for c in selected_customers],
+                            key="preview_selector"
+                        )
+                        
+                        if preview_customer:
+                            # Get customer details
+                            customer_idx = [f"{c['name']} ({c['number']})" for c in selected_customers].index(preview_customer)
+                            customer = selected_customers[customer_idx]
+                            
+                            # Filter transactions
+                            preview_trans = filter_customer_transactions(
+                                df,
+                                customer['number'],
+                                start_date,
+                                end_date,
+                                payment_mode
+                            )
+                            
+                            st.write(f"**Transactions for {customer['name']}**")
+                            st.write(f"**Filters:** Payment Mode = `{payment_mode}`, Date Range = `{start_date}` to `{end_date}`")
+                            st.write(f"**Total items found:** {len(preview_trans)}")
+                            
+                            if not preview_trans.empty:
+                                st.dataframe(
+                                    preview_trans[['Date', 'EntryType', 'EntryName', 'PaymentMode']],
+                                    use_container_width=True
+                                )
+                            else:
+                                st.warning("⚠️ No transactions found for this customer with selected filters")
                     
                     if st.button("🎯 Generate PDFs", type="primary", use_container_width=True):
                         # Progress tracking

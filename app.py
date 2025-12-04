@@ -108,11 +108,11 @@ def filter_customer_transactions(df, customer_number, start_date, end_date):
     start_dt = pd.to_datetime(start_date)
     end_dt = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
     
-    # Clean customer number
-    clean_number = str(customer_number).replace(/[^\d]/g, '')
+    # Clean customer number (remove non-digits)
+    clean_number = ''.join(filter(str.isdigit, str(customer_number)))
     
     # Filter by customer
-    customer_data = df[df['CustomerNumber'].astype(str).str.replace('[^\d]', '', regex=True) == clean_number]
+    customer_data = df[df['CustomerNumber'].astype(str).str.replace(r'[^\d]', '', regex=True) == clean_number]
     
     # Filter by date
     customer_data['DateParsed'] = pd.to_datetime(customer_data['Date'], errors='coerce')

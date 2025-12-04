@@ -6,6 +6,7 @@ Complete working application for generating customer PDFs from POS data
 import streamlit as st
 import pandas as pd
 import yaml
+import re
 from io import BytesIO
 from datetime import datetime
 import zipfile
@@ -94,14 +95,25 @@ def get_unique_customers(df):
     # Convert to list of dicts
     customers = []
     for _, row in unique_customers.iterrows():
+        # Clean phone number (remove .0 if it's a float)
+        phone = row['CustomerNumber']
+        if pd.notna(phone):
+            # Convert to int if it's a float, then to string
+            try:
+                phone = str(int(float(phone)))
+            except (ValueError, TypeError):
+                phone = str(phone).strip()
+        else:
+            phone = ""
+        
         customers.append({
             'name': str(row['CustomerName']).strip(),
-            'number': str(row['CustomerNumber']).strip()
+            'number': phone
         })
     
     return customers
 
-def filter_customer_transactions(df, customer_number, start_date, end_date):
+def filter_customer_transactions(df, customer_number, start_date, end_date, payment_mode=None):
     """Filter transactions for a specific customer and date range"""
     
     # Convert dates
@@ -120,6 +132,10 @@ def filter_customer_transactions(df, customer_number, start_date, end_date):
         (customer_data['DateParsed'] >= start_dt) & 
         (customer_data['DateParsed'] <= end_dt)
     ]
+    
+    # Filter by payment mode if specified (skip if "All")
+    if payment_mode and payment_mode != "All" and 'PaymentMode' in customer_data.columns:
+        customer_data = customer_data[customer_data['PaymentMode'] == payment_mode]
     
     # Filter by entry type (only Items and Discounts)
     customer_data = customer_data[customer_data['EntryType'].isin(['Item', 'Discount'])]
@@ -341,8 +357,9 @@ def main():
             st.header("💳 Payment Mode")
             payment_mode = st.selectbox(
                 "Select payment mode",
-                ["Credit", "Cash", "UPI / BHIM", "Card"],
-                index=0
+                ["All", "Credit", "Cash", "UPI / BHIM", "Card"],
+                index=0,
+                help="Select 'All' to include all payment modes"
             )
             
             # Get customers
@@ -414,7 +431,8 @@ def main():
                                 df,
                                 customer['number'],
                                 start_date,
-                                end_date
+                                end_date,
+                                payment_mode
                             )
                             
                             if not transactions.empty:

@@ -1,1 +1,36 @@
+# श्रीLalita PDF Generator - Configuration File
 
+# Column Mapping
+# Update these if your POS export format changes
+columns:
+  receipt_id: "ReceiptId"
+  date: "Date"
+  cashier: "Cashier"
+  customer_name: "CustomerName"
+  customer_number: "CustomerNumber"
+  customer_email: "CustomerEmail"
+  entry_type: "EntryType"
+  entry_name: "EntryName"
+  entry_amount: "EntryAmount"
+  payment_mode: "PaymentMode"
+
+# Scheme Settings
+# Discount pricing for special customers
+scheme:
+  product: "Raw Whole Milk"
+  price_1l_original: 60
+  price_1l_discounted: 55
+  price_500ml_original: 30
+  price_500ml_discounted: 27.5
+
+# PDF Settings (optional customization)
+pdf:
+  page_size: "A4"
+  font_size: 10
+  company_name: "श्रीLalita"
+  
+# App Settings
+app:
+  title: "श्रीLalita PDF Generator"
+  icon: "🥛"
+  theme: "light"

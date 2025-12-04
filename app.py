@@ -84,36 +84,36 @@ def get_unique_customers(df, payment_mode=None):
         return []
     
     # Filter rows with customer information
-    customer_df = df[df['CustomerName'].notna() & df['CustomerNumber'].notna()]
+    customer_df = df[df['CustomerName'].notna() & df['CustomerNumber'].notna()].copy()
     
     # If payment mode specified (and not "All"), filter by it first
     if payment_mode and payment_mode != "All" and 'PaymentMode' in customer_df.columns:
         customer_df = customer_df[customer_df['PaymentMode'] == payment_mode]
     
-    # Get unique combinations
-    unique_customers = customer_df[['CustomerName', 'CustomerNumber']].drop_duplicates()
+    # Clean phone numbers BEFORE deduplication
+    def clean_phone_number(val):
+        if pd.notna(val):
+            try:
+                return str(int(float(val)))
+            except (ValueError, TypeError, OverflowError):
+                return str(val).strip()
+        return ""
+    
+    customer_df['CustomerNumberClean'] = customer_df['CustomerNumber'].apply(clean_phone_number)
+    customer_df['CustomerNameClean'] = customer_df['CustomerName'].astype(str).str.strip()
+    
+    # Get unique combinations based on CLEANED values
+    unique_customers = customer_df[['CustomerNameClean', 'CustomerNumberClean']].drop_duplicates()
     
     # Sort by name
-    unique_customers = unique_customers.sort_values('CustomerName')
+    unique_customers = unique_customers.sort_values('CustomerNameClean')
     
     # Convert to list of dicts
     customers = []
     for _, row in unique_customers.iterrows():
-        # Clean phone number (remove .0 if it's a float)
-        phone = row['CustomerNumber']
-        if pd.notna(phone):
-            # Convert to int if it's a float, then to string
-            try:
-                # Handle scientific notation by converting to int first
-                phone_clean = str(int(float(phone)))
-            except (ValueError, TypeError, OverflowError):
-                phone_clean = str(phone).strip()
-        else:
-            phone_clean = ""
-        
         customers.append({
-            'name': str(row['CustomerName']).strip(),
-            'number': phone_clean  # Already cleaned
+            'name': row['CustomerNameClean'],
+            'number': row['CustomerNumberClean']
         })
     
     return customers
@@ -543,12 +543,13 @@ def main():
                             st.success(f"✅ Successfully generated {len(generated_pdfs)} PDFs!")
                             
                             # Individual download buttons
-                            for pdf in generated_pdfs:
+                            for idx, pdf in enumerate(generated_pdfs):
                                 st.download_button(
                                     label=f"📄 Download: {pdf['name']}",
                                     data=pdf['bytes'],
                                     file_name=pdf['filename'],
-                                    mime="application/pdf"
+                                    mime="application/pdf",
+                                    key=f"download_pdf_{idx}"  # Unique key for each button
                                 )
                             
                             # Create ZIP of all PDFs

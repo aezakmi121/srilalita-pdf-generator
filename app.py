@@ -78,13 +78,17 @@ def process_excel_file(uploaded_file):
         st.error(f"Error reading Excel file: {str(e)}")
         return None
 
-def get_unique_customers(df):
-    """Extract unique customers from processed data"""
+def get_unique_customers(df, payment_mode=None):
+    """Extract unique customers from processed data, optionally filtered by payment mode"""
     if df is None or df.empty:
         return []
     
     # Filter rows with customer information
     customer_df = df[df['CustomerName'].notna() & df['CustomerNumber'].notna()]
+    
+    # If payment mode specified (and not "All"), filter by it first
+    if payment_mode and payment_mode != "All" and 'PaymentMode' in customer_df.columns:
+        customer_df = customer_df[customer_df['PaymentMode'] == payment_mode]
     
     # Get unique combinations
     unique_customers = customer_df[['CustomerName', 'CustomerNumber']].drop_duplicates()
@@ -100,15 +104,16 @@ def get_unique_customers(df):
         if pd.notna(phone):
             # Convert to int if it's a float, then to string
             try:
-                phone = str(int(float(phone)))
-            except (ValueError, TypeError):
-                phone = str(phone).strip()
+                # Handle scientific notation by converting to int first
+                phone_clean = str(int(float(phone)))
+            except (ValueError, TypeError, OverflowError):
+                phone_clean = str(phone).strip()
         else:
-            phone = ""
+            phone_clean = ""
         
         customers.append({
             'name': str(row['CustomerName']).strip(),
-            'number': phone
+            'number': phone_clean  # Already cleaned
         })
     
     return customers
@@ -120,11 +125,20 @@ def filter_customer_transactions(df, customer_number, start_date, end_date, paym
     start_dt = pd.to_datetime(start_date)
     end_dt = pd.to_datetime(end_date) + pd.Timedelta(hours=23, minutes=59, seconds=59)
     
-    # Clean customer number (remove non-digits)
-    clean_number = ''.join(filter(str.isdigit, str(customer_number)))
+    # Clean customer number (remove non-digits) - handle scientific notation
+    try:
+        clean_number = str(int(float(str(customer_number))))
+    except (ValueError, TypeError, OverflowError):
+        clean_number = ''.join(filter(str.isdigit, str(customer_number)))
     
-    # Filter by customer
-    customer_data = df[df['CustomerNumber'].astype(str).str.replace(r'[^\d]', '', regex=True) == clean_number]
+    # Filter by customer - also handle scientific notation in dataframe
+    def clean_phone(val):
+        try:
+            return str(int(float(str(val))))
+        except:
+            return ''.join(filter(str.isdigit, str(val)))
+    
+    customer_data = df[df['CustomerNumber'].apply(clean_phone) == clean_number]
     
     # Filter by date
     customer_data['DateParsed'] = pd.to_datetime(customer_data['Date'], errors='coerce')
@@ -377,11 +391,15 @@ def main():
                 help="Select 'All' to include all payment modes"
             )
             
-            # Get customers
-            customers = get_unique_customers(df)
+            # Get customers - filtered by payment mode
+            customers = get_unique_customers(df, payment_mode)
             
             if customers:
                 st.header(f"👥 Select Customers ({len(customers)} found)")
+                
+                # Show info about filtering
+                if payment_mode != "All":
+                    st.info(f"ℹ️ Showing only customers with **{payment_mode}** transactions")
                 
                 # Select all/none buttons
                 col1, col2 = st.columns(2)
